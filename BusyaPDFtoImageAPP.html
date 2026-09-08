@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Busya PDF to image</title>
+    <!-- Убрали прямую загрузку скриптов, теперь они кэшируются через JS для работы без интернета -->
+
+    <style>
+        /* Базовые переменные (Светлая тема по умолчанию) */
+        :root {
+            --bg-color: #f5f5f7;
+            --text-color: #1d1d1f;
+            --accent-color: #007aff;
+            --accent-hover: #005bb5;
+            --btn-bg: #ffffff;
+            --btn-text: #1d1d1f;
+            --border-color: #d2d2d7;
+            --screen-bg: #e5e5ea;
+            --success-color: #34c759;
+            --danger-color: #ff3b30;
+        }
+
+        /* Тёмная тема */
+        [data-theme="dark"] {
+            --bg-color: #000000;
+            --text-color: #f5f5f7;
+            --accent-color: #0a84ff;
+            --accent-hover: #0066cc;
+            --btn-bg: #1c1c1e;
+            --btn-text: #f5f5f7;
+            --border-color: #38383a;
+            --screen-bg: #1c1c1e;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* Режим левши */
+        body.left-handed #top-bar {
+            flex-direction: row-reverse;
+        }
+
+        #top-bar {
+            height: 60px;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            padding: 0 20px;
+            flex-shrink: 0;
+            z-index: 10;
+        }
+
+        .icon-btn {
+            background: none;
+            border: none;
+            font-size: 28px;
+            color: var(--text-color);
+            cursor: pointer;
+            padding: 10px;
+            transition: transform 0.2s;
+        }
+        .icon-btn:active { transform: scale(0.9); }
+
+        .screen {
+            display: none;
+            flex: 1;
+            flex-direction: column;
+            overflow-y: auto;
+            position: relative;
+        }
+        .screen.active { display: flex; }
+
+        /* ЭКРАН 1: ГЛАВНЫЙ */
+        #main-screen .top-half {
+            flex: 2;
+            background-color: var(--screen-bg);
+            border-bottom: 2px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        #main-screen .bottom-half {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .big-btn {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 20px 40px;
+            border-radius: 20px;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+            transition: background 0.3s, transform 0.1s;
+        }
+        .big-btn:active { transform: scale(0.95); }
+        .big-btn:disabled { background-color: var(--border-color); cursor: not-allowed; transform: none; box-shadow: none; }
+
+        #pdf-name-display {
+            margin-top: 20px;
+            font-size: 18px;
+            font-weight: 500;
+            text-align: center;
+            word-break: break-all;
+            max-width: 90%;
+        }
+
+        /* ЭКРАН НАСТРОЕК & КОНФИГУРАЦИИ */
+        .content-container {
+            padding: 20px;
+            max-width: 600px;
+            margin: 0 auto;
+            width: 100%;
+            padding-bottom: 80px; /* отступ для нижних кнопок */
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+            display: flex;
+            flex-direction: column;
+        }
+        .form-group label {
+            font-size: 16px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        select, input[type="text"], input[type="color"] {
+            width: 100%;
+            padding: 14px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            background-color: var(--btn-bg);
+            color: var(--btn-text);
+            font-size: 16px;
+            outline: none;
+        }
+        select:focus, input[type="text"]:focus { border-color: var(--accent-color); }
+
+        .btn-link {
+            background: none;
+            border: none;
+            color: var(--accent-color);
+            font-size: 14px;
+            text-align: left;
+            padding: 8px 0;
+            cursor: pointer;
+            margin-top: 5px;
+            font-weight: 500;
+        }
+
+        .bottom-fixed-btn {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            margin: 0 auto;
+            max-width: 560px;
+        }
+        
+        .action-btn {
+            width: 100%;
+            background-color: var(--btn-bg);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            padding: 16px;
+            border-radius: 14px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: 12px;
+            transition: background 0.2s;
+        }
+        .action-btn.primary {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+        }
+
+        /* МОДАЛЬНЫЕ ОКНА */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            padding: 20px;
+        }
+        .modal-overlay.active { display: flex; }
+        
+        .modal-content {
+            background: var(--bg-color);
+            padding: 25px;
+            border-radius: 20px;
+            width: 100%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+        }
+        .modal-title { font-size: 20px; font-weight: bold; margin-bottom: 15px; }
+        .contact-list { margin-bottom: 20px; line-height: 1.8; font-size: 16px;}
+        .contact-list a { color: var(--accent-color); text-decoration: none; }
+        
+        .copy-box {
+            background: var(--btn-bg);
+            border: 1px solid var(--border-color);
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        /* ЭКРАН УСПЕХА */
+        #success-screen {
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 20px;
+        }
+        .success-icon {
+            font-size: 100px;
+            color: var(--success-color);
+            margin-bottom: 20px;
+            animation: popIn 0.5s ease-out;
+        }
+        @keyframes popIn {
+            0% { transform: scale(0); }
+            80% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        
+        .feedback-buttons {
+            display: none;
+            flex-direction: column;
+            width: 100%;
+            margin-top: 10px;
+        }
+        .feedback-buttons.active { display: flex; }
+
+        /* Loader */
+        #loader {
+            display: none;
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            font-size: 20px;
+        }
+        .spinner {
+            border: 6px solid #f3f3f3;
+            border-top: 6px solid var(--accent-color);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Утилиты */
+        .hidden { display: none !important; }
+        .flex-row { display: flex; align-items: center; justify-content: space-between; }
+        .mt-15 { margin-top: 15px; }
+    </style>
+</head>
+<body>
+
+    <!-- ВЕРХНИЙ БАР (НАСТРОЙКИ) -->
+    <div id="top-bar">
+        <button class="icon-btn" id="btn-settings" onclick="app.showScreen('settings-screen')">⚙️</button>
+    </div>
+
+    <!-- ЭКРАН 1: ГЛАВНЫЙ -->
+    <div id="main-screen" class="screen active">
+        <div class="top-half">
+            <button class="big-btn" data-i18n="btn_select" onclick="document.getElementById('file-input').click()">Выбрать PDF</button>
+            <input type="file" id="file-input" accept="application/pdf" class="hidden" onchange="app.handleFileSelect(event)">
+            <div id="pdf-name-display">Файл не выбран</div>
+        </div>
+        <div class="bottom-half">
+            <button class="big-btn" id="btn-start" disabled data-i18n="btn_start" onclick="app.showScreen('config-screen')">Начать</button>
+        </div>
+    </div>
+
+    <!-- ЭКРАН 2: КОНФИГУРАЦИЯ -->
+    <div id="config-screen" class="screen">
+        <div class="content-container">
+            <h2 style="margin-bottom: 20px;" data-i18n="config_title">Настройки конвертации</h2>
+            
+            <!-- Качество -->
+            <div class="form-group">
+                <label data-i18n="quality_lbl">Качество</label>
+                <select id="select-quality" onchange="app.handleQualityChange()">
+                    <option value="original">Оригинал</option>
+                    <option value="100">100%</option>
+                    <option value="98">98%</option>
+                    <option value="95">95%</option>
+                    <option value="90">90%</option>
+                    <option value="85">85%</option>
+                    <option value="80">80%</option>
+                    <option value="75">75%</option>
+                    <option value="67">67%</option>
+                    <option value="60">60%</option>
+                    <option value="55">55%</option>
+                    <option value="50">50%</option>
+                    <option value="45">45%</option>
+                    <option value="40">40%</option>
+                    <option value="35">35%</option>
+                    <option value="30">30%</option>
+                    <option value="25">25%</option>
+                    <option value="10">10%</option>
+                    <option value="5">5%</option>
+                    <option value="1">1%</option>
+                    <option value="custom" data-i18n="custom_opt">Свой вариант</option>
+                </select>
+                <input type="number" id="input-custom-quality" class="hidden mt-15" placeholder="Введите %, не ниже 1%" min="1" max="100">
+                <button class="btn-link" data-i18n="custom_quality_btn" onclick="app.openModal('modal-quality')">Предложить свой % качества в меню</button>
+            </div>
+
+            <!-- Формат -->
+            <div class="form-group">
+                <label data-i18n="format_lbl">Формат изображения</label>
+                <select id="select-format" onchange="app.handleFormatChange()">
+                    <option value="image/jpeg">JPG</option>
+                    <option value="image/png">PNG</option>
+                    <option value="image/gif">GIF</option>
+                    <option value="image/bmp">BMP</option>
+                    <option value="image/tiff">TIFF</option>
+                    <option value="image/dng">DNG</option>
+                    <option value="image/heic">HEIC</option>
+                    <option value="image/webp">WebP</option>
+                    <option value="image/avif">AVIF</option>
+                    <option value="other" data-i18n="other_opt">Другой</option>
+                </select>
+                <input type="text" id="input-custom-format" class="hidden mt-15" placeholder="введите формат">
+                <button class="btn-link" data-i18n="custom_format_btn" onclick="app.openModal('modal-format')">Предложить новый формат в меню</button>
+            </div>
+
+            <!-- Название -->
+            <div class="form-group">
+                <label data-i18n="name_lbl">Название файла</label>
+                <input type="text" id="input-filename" placeholder="введите название новой фотки">
+            </div>
+
+            <button class="big-btn primary bottom-fixed-btn" data-i18n="convert_btn" onclick="app.convertPDF()">Конвертировать</button>
+        </div>
+    </div>
+
+    <!-- ЭКРАН 3: УСПЕХ -->
+    <div id="success-screen" class="screen">
+        <div class="content-container" style="display:flex; flex-direction:column; align-items:center;">
+            <div class="success-icon">✅</div>
+            <h2 style="margin-bottom: 30px;" data-i18n="success_title">Успешно!</h2>
+            
+            <div style="width: 100%; max-width: 400px;">
+                <button class="action-btn primary" data-i18n="save_btn" onclick="app.saveImages()">Сохранить</button>
+                <button class="action-btn" data-i18n="share_btn" onclick="app.shareApp()">Поделиться приложением</button>
+                
+                <button class="action-btn" data-i18n="review_btn" onclick="app.toggleFeedback()">Оставить отзыв</button>
+                <div id="feedback-btns" class="feedback-buttons">
+                    <button class="action-btn" style="background:#24292e; color:white;" onclick="window.open('https://github.com/berestnevnikolaj671-kot/Busya-PDF-to-image-convecter', '_blank')">Оставить звёздочку на GitHub</button>
+                    <button class="action-btn" style="background:#673ab7; color:white;" onclick="window.open('https://forms.gle/gWT4RRb1mZBkU9dk7', '_blank')">Оставить отзыв на Google формы</button>
+                </div>
+
+                <button class="action-btn" style="margin-top:20px;" data-i18n="done_btn" onclick="app.resetApp()">Готово</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ЭКРАН НАСТРОЕК -->
+    <div id="settings-screen" class="screen">
+        <div class="content-container">
+            <div class="flex-row" style="margin-bottom: 20px;">
+                <h2 data-i18n="settings_title">Настройки</h2>
+                <button class="icon-btn" onclick="app.showScreen('main-screen')">✖</button>
+            </div>
+
+            <!-- Тема -->
+            <div class="form-group">
+                <label data-i18n="theme_lbl">Тема</label>
+                <select id="setting-theme" onchange="app.applySettings()">
+                    <option value="light" data-i18n="theme_light">Светлая</option>
+                    <option value="dark" data-i18n="theme_dark">Тёмная</option>
+                    <option value="custom" data-i18n="theme_custom">Своя</option>
+                </select>
+                <div id="custom-theme-colors" class="hidden mt-15 flex-row">
+                    <div>Фон: <input type="color" id="color-bg" value="#ffffff" onchange="app.applySettings()"></div>
+                    <div>Текст: <input type="color" id="color-text" value="#000000" onchange="app.applySettings()"></div>
+                </div>
+            </div>
+
+            <!-- Язык -->
+            <div class="form-group">
+                <label data-i18n="lang_lbl">Язык</label>
+                <select id="setting-lang" onchange="app.applySettings()">
+                    <option value="ru">🇷🇺 Русский</option>
+                    <option value="en">🇬🇧 English</option>
+                    <option value="cn">🇨🇳 中文</option>
+                    <option value="ar">🇸🇦 العربية</option>
+                    <option value="by">🇧🇾 Беларуская</option>
+                    <option value="de">🇩🇪 Deutsch</option>
+                    <option value="ua">🇺🇦 Українська</option>
+                    <option value="mk">🇲🇰 Македонски</option>
+                </select>
+            </div>
+
+            <!-- Формат по умолчанию (Полный список) -->
+            <div class="form-group">
+                <label data-i18n="format_def_lbl">Формат по умолчанию</label>
+                <select id="setting-format" onchange="app.applySettings()">
+                    <option value="image/jpeg">JPG</option>
+                    <option value="image/png">PNG</option>
+                    <option value="image/gif">GIF</option>
+                    <option value="image/bmp">BMP</option>
+                    <option value="image/tiff">TIFF</option>
+                    <option value="image/dng">DNG</option>
+                    <option value="image/heic">HEIC</option>
+                    <option value="image/webp">WebP</option>
+                    <option value="image/avif">AVIF</option>
+                </select>
+            </div>
+
+            <!-- Качество по умолчанию (Полный список) -->
+            <div class="form-group">
+                <label data-i18n="quality_def_lbl">Качество по умолчанию</label>
+                <select id="setting-quality" onchange="app.applySettings()">
+                    <option value="original">Оригинал</option>
+                    <option value="100">100%</option>
+                    <option value="98">98%</option>
+                    <option value="95">95%</option>
+                    <option value="90">90%</option>
+                    <option value="85">85%</option>
+                    <option value="80">80%</option>
+                    <option value="75">75%</option>
+                    <option value="67">67%</option>
+                    <option value="60">60%</option>
+                    <option value="55">55%</option>
+                    <option value="50">50%</option>
+                    <option value="45">45%</option>
+                    <option value="40">40%</option>
+                    <option value="35">35%</option>
+                    <option value="30">30%</option>
+                    <option value="25">25%</option>
+                    <option value="10">10%</option>
+                    <option value="5">5%</option>
+                    <option value="1">1%</option>
+                </select>
+            </div>
+
+            <!-- Режим левши -->
+            <div class="form-group flex-row" style="justify-content: flex-start; gap: 15px;">
+                <input type="checkbox" id="setting-left-hand" style="width: 20px; height: 20px;" onchange="app.applySettings()">
+                <label style="margin:0; cursor:pointer;" for="setting-left-hand" data-i18n="left_hand_lbl">Режим левши</label>
+            </div>
+            
+            <button class="action-btn primary mt-15" data-i18n="save_exit_btn" onclick="app.showScreen('main-screen')">Сохранить и выйти</button>
+        </div>
+    </div>
+
+    <!-- Модальное окно: Предложить % -->
+    <div id="modal-quality" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-title" data-i18n="custom_quality_btn">Предложить % качества</div>
+            <div class="contact-list">
+                SMS: <a href="sms:+79102563060">+7 910 256 30 60</a><br>
+                MAX: <a href="tel:+79202419565">+7 920 241 95 65</a><br>
+                Email: <a href="mailto:berestnevnikolaj671@gmail.com">berestnevnikolaj671@gmail.com</a><br>
+                Vi🟪er: <a href="viber://chat?number=%2B79102563060">+7 910 256 30 60</a><br>
+                Google форма: <a href="https://forms.gle/8mq3as1qpBNk72BQ9" target="_blank">Открыть</a>
+            </div>
+            <div class="copy-box">
+                <p id="copy-text-quality" style="margin-bottom:10px;">Здравствуйте! Я считаю то что в вашем меню выбора качества в приложении Busya PDF to image не хватает [ваш процент]</p>
+                <button class="action-btn" style="padding:10px;" data-i18n="copy_btn" onclick="app.copyText('copy-text-quality')">Копировать текст</button>
+            </div>
+            <button class="action-btn" data-i18n="close_btn" onclick="app.closeModal('modal-quality')">Закрыть</button>
+        </div>
+    </div>
+
+    <!-- Модальное окно: Предложить формат -->
+    <div id="modal-format" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-title" data-i18n="custom_format_btn">Предложить новый формат</div>
+            <div class="contact-list">
+                SMS: <a href="sms:+79102563060">+7 910 256 30 60</a><br>
+                MAX: <a href="tel:+79202419565">+7 920 241 95 65</a><br>
+                Email: <a href="mailto:berestnevnikolaj671@gmail.com">berestnevnikolaj671@gmail.com</a><br>
+                Vi🟪er: <a href="viber://chat?number=%2B79102563060">+7 910 256 30 60</a><br>
+                Google форма: <a href="https://forms.gle/iziCd8ePTEN8Xv8G9" target="_blank">Открыть</a>
+            </div>
+            <div class="copy-box">
+                <p id="copy-text-format" style="margin-bottom:10px;">Здравствуйте! Я считаю то что в вашем меню выбора форматов в приложении Busya PDF to image не хватает [ваш формат]</p>
+                <button class="action-btn" style="padding:10px;" data-i18n="copy_btn" onclick="app.copyText('copy-text-format')">Копировать текст</button>
+            </div>
+            <button class="action-btn" data-i18n="close_btn" onclick="app.closeModal('modal-format')">Закрыть</button>
+        </div>
+    </div>
+
+    <!-- Экран загрузки -->
+    <div id="loader">
+        <div class="spinner"></div>
+        <div id="loader-text">Конвертация...</div>
+    </div>
+
+    <script>
+        async function loadScriptWithCache(url, isWorker = false) {
+            if (!window.caches) {
+                // Фолбэк для старых браузеров (загрузка напрямую, если кэш не поддерживается)
+                return new Promise((resolve, reject) => {
+                    let script = document.createElement('script');
+                    script.src = url;
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.head.appendChild(script);
+                });
+            }
+            try {
+                const cacheName = 'busya-pdfjs-cache-v1';
+                const cache = await caches.open(cacheName);
+                let response = await cache.match(url);
+                if (!response) {
+                    response = await fetch(url);
+                    if (response.ok) {
+                        await cache.put(url, response.clone()); // сохраняем навсегда
+                    } else {
+                        throw new Error("Сетевая ошибка");
+                    }
+                }
+                const blob = await response.blob();
+                const blobUrl = URL.createObjectURL(blob);
+
+                if (isWorker) {
+                    return blobUrl;
+                } else {
+                    return new Promise((resolve, reject) => {
+                        let script = document.createElement('script');
+                        script.src = blobUrl;
+                        script.onload = resolve;
+                        script.onerror = reject;
+                        document.head.appendChild(script);
+                    });
+                }
+            } catch(e) {
+                console.error("Ошибка кэширования:", e);
+                // Если нет интернета при первом запуске, пробуем напрямую (браузер может взять из своего системного кэша)
+                return new Promise((resolve) => {
+                    let script = document.createElement('script');
+                    script.src = url;
+                    script.onload = resolve;
+                    document.head.appendChild(script);
+                });
+            }
+        }
+
+        const app = {
+            currentFile: null,
+            pdfDoc: null,
+            convertedImages: [],
+            
+            async init() {
+                this.loadSettings();
+                this.applySettings();
+                
+                // Загружаем библиотеки при старте, чтобы потом работать локально (в оффлайне)
+                this.showLoader(true, "Загрузка библиотеки (нужен интернет только раз)...");
+                try {
+                    await loadScriptWithCache('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js', false);
+                    const workerUrl = await loadScriptWithCache('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js', true);
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
+                } catch(e) {
+                    console.error("Ошибка загрузки PDF.js:", e);
+                }
+                this.showLoader(false);
+            },
+
+            showScreen(id) {
+                document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+                document.getElementById(id).classList.add('active');
+                if (id === 'main-screen') document.getElementById('top-bar').style.display = 'flex';
+                else document.getElementById('top-bar').style.display = 'none';
+            },
+
+            handleFileSelect(event) {
+                const file = event.target.files[0];
+                if (file && file.type === 'application/pdf') {
+                    this.currentFile = file;
+                    document.getElementById('pdf-name-display').textContent = file.name;
+                    document.getElementById('btn-start').disabled = false;
+                    document.getElementById('input-filename').value = file.name.replace('.pdf', '');
+                } else {
+                    alert("Пожалуйста, выберите валидный PDF файл.");
+                }
+            },
+
+            handleQualityChange() {
+                const val = document.getElementById('select-quality').value;
+                document.getElementById('input-custom-quality').classList.toggle('hidden', val !== 'custom');
+            },
+
+            handleFormatChange() {
+                const val = document.getElementById('select-format').value;
+                document.getElementById('input-custom-format').classList.toggle('hidden', val !== 'other');
+            },
+
+            openModal(id) { document.getElementById(id).classList.add('active'); },
+            closeModal(id) { document.getElementById(id).classList.remove('active'); },
+
+            async copyText(elementId) {
+                const text = document.getElementById(elementId).innerText;
+                try {
+                    await navigator.clipboard.writeText(text);
+                    alert('Текст скопирован!');
+                } catch (err) {
+                    const textArea = document.createElement("textarea");
+                    textArea.value = text;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    alert('Текст скопирован!');
+                }
+            },
+
+            dataURLtoBlob(dataurl) {
+                let arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1],
+                    bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
+                while(n--){
+                    u8arr[n] = bstr.charCodeAt(n);
+                }
+                return new Blob([u8arr], {type:mime});
+            },
+
+            async convertPDF() {
+                if (!this.currentFile) return;
+                
+                this.showLoader(true, 'Конвертация...');
+                this.convertedImages = [];
+                
+                try {
+                    const arrayBuffer = await this.currentFile.arrayBuffer();
+                    this.pdfDoc = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+                    
+                    const formatSel = document.getElementById('select-format').value;
+                    let mimeType = formatSel;
+                    let ext = formatSel.split('/')[1] || 'jpg';
+                    
+                    if (formatSel === 'other') {
+                        ext = document.getElementById('input-custom-format').value || 'jpg';
+                        mimeType = 'image/jpeg'; // Fallback
+                    } else if (!['image/jpeg', 'image/png', 'image/webp'].includes(formatSel)) {
+                         mimeType = 'image/png'; // Canvas support limit fallback
+                         ext = formatSel.split('/')[1];
+                    }
+
+                    const qualitySel = document.getElementById('select-quality').value;
+                    let quality = 1.0;
+                    if (qualitySel === 'custom') {
+                        let c = parseInt(document.getElementById('input-custom-quality').value);
+                        if (isNaN(c) || c < 1) c = 100;
+                        quality = c / 100;
+                    } else if (qualitySel !== 'original') {
+                        quality = parseInt(qualitySel) / 100;
+                    }
+
+                    let scale = qualitySel === 'original' ? 2.5 : 2 * quality;
+                    if(scale < 0.5) scale = 0.5;
+
+                    for (let i = 1; i <= this.pdfDoc.numPages; i++) {
+                        document.getElementById('loader-text').innerText = `Конвертация... ${i} из ${this.pdfDoc.numPages}`;
+                        const page = await this.pdfDoc.getPage(i);
+                        const viewport = page.getViewport({ scale: scale });
+                        
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        canvas.height = viewport.height;
+                        canvas.width = viewport.width;
+
+                        await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+                        
+                        if (mimeType === 'image/jpeg') {
+                            const newCanvas = document.createElement('canvas');
+                            newCanvas.width = canvas.width;
+                            newCanvas.height = canvas.height;
+                            const newCtx = newCanvas.getContext('2d');
+                            newCtx.fillStyle = '#FFFFFF';
+                            newCtx.fillRect(0, 0, newCanvas.width, newCanvas.height);
+                            newCtx.drawImage(canvas, 0, 0);
+                            this.convertedImages.push({
+                                data: newCanvas.toDataURL(mimeType, quality),
+                                ext: ext
+                            });
+                        } else {
+                            this.convertedImages.push({
+                                data: canvas.toDataURL(mimeType, quality),
+                                ext: ext
+                            });
+                        }
+                    }
+                    
+                    this.showLoader(false);
+                    this.showScreen('success-screen');
+
+                } catch (error) {
+                    console.error(error);
+                    alert("Произошла ошибка при конвертации.");
+                    this.showLoader(false);
+                }
+            },
+
+            saveImages() {
+                if (this.convertedImages.length === 0) return;
+                
+                let baseName = document.getElementById('input-filename').value.trim() || 'Photo';
+                
+                // Исправленное сохранение через Blob — стабильно работает на телефонах и не крашится из-за лимита длины Data URL
+                this.convertedImages.forEach((img, index) => {
+                    setTimeout(() => {
+                        try {
+                            const blob = this.dataURLtoBlob(img.data);
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.style.display = 'none';
+                            a.href = url;
+                            let suffix = this.convertedImages.length > 1 ? `_${index + 1}` : '';
+                            a.download = `${baseName}${suffix}.${img.ext}`;
+                            document.body.appendChild(a);
+                            a.click();
+                            
+                            setTimeout(() => {
+                                window.URL.revokeObjectURL(url);
+                                document.body.removeChild(a);
+                            }, 200);
+                        } catch(e) {
+                            console.error("Ошибка сохранения файла", e);
+                            alert("Не удалось сохранить изображение " + (index+1));
+                        }
+                    }, index * 400); // 400ms пауза между файлами
+                });
+            },
+
+            shareApp() {
+                const text = "Привет! Нашёл бесплатную программу от BusyaTM для конвертации PDF в фото. Без рекламы. Скачать можно на GitHub - https://github.com/berestnevnikolaj671-kot/Busya-PDF-to-image-convecter";
+                if (navigator.share) {
+                    navigator.share({ title: 'Busya PDF to image', text: text })
+                    .catch(console.error);
+                } else {
+                    this.copyToClipboardDirect(text, "Текст для отправки скопирован в буфер обмена!");
+                }
+            },
+            
+            copyToClipboardDirect(text, msg) {
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                alert(msg);
+            },
+
+            toggleFeedback() {
+                document.getElementById('feedback-btns').classList.toggle('active');
+            },
+
+            resetApp() {
+                this.currentFile = null;
+                this.pdfDoc = null;
+                this.convertedImages = [];
+                document.getElementById('file-input').value = '';
+                document.getElementById('pdf-name-display').textContent = 'Файл не выбран';
+                document.getElementById('btn-start').disabled = true;
+                document.getElementById('feedback-btns').classList.remove('active');
+                
+                document.getElementById('select-format').value = document.getElementById('setting-format').value;
+                document.getElementById('select-quality').value = document.getElementById('setting-quality').value;
+                this.handleFormatChange();
+                this.handleQualityChange();
+
+                this.showScreen('main-screen');
+            },
+
+            showLoader(show, text = 'Конвертация...') {
+                document.getElementById('loader').style.display = show ? 'flex' : 'none';
+                if(show) document.getElementById('loader-text').innerText = text;
+            },
+
+            saveSettings() {
+                const settings = {
+                    theme: document.getElementById('setting-theme').value,
+                    bgColor: document.getElementById('color-bg').value,
+                    textColor: document.getElementById('color-text').value,
+                    lang: document.getElementById('setting-lang').value,
+                    defaultFormat: document.getElementById('setting-format').value,
+                    defaultQuality: document.getElementById('setting-quality').value,
+                    leftHanded: document.getElementById('setting-left-hand').checked
+                };
+                localStorage.setItem('busya-settings', JSON.stringify(settings));
+            },
+
+            loadSettings() {
+                const saved = localStorage.getItem('busya-settings');
+                if (saved) {
+                    const s = JSON.parse(saved);
+                    if(s.theme) document.getElementById('setting-theme').value = s.theme;
+                    if(s.bgColor) document.getElementById('color-bg').value = s.bgColor;
+                    if(s.textColor) document.getElementById('color-text').value = s.textColor;
+                    if(s.lang) document.getElementById('setting-lang').value = s.lang;
+                    if(s.defaultFormat) document.getElementById('setting-format').value = s.defaultFormat;
+                    if(s.defaultQuality) document.getElementById('setting-quality').value = s.defaultQuality;
+                    if(s.leftHanded !== undefined) document.getElementById('setting-left-hand').checked = s.leftHanded;
+                }
+            },
+
+            applySettings() {
+                const theme = document.getElementById('setting-theme').value;
+                document.getElementById('custom-theme-colors').classList.toggle('hidden', theme !== 'custom');
+                
+                if (theme === 'dark') {
+                    document.body.setAttribute('data-theme', 'dark');
+                    document.body.style.cssText = '';
+                } else if (theme === 'light') {
+                    document.body.removeAttribute('data-theme');
+                    document.body.style.cssText = '';
+                } else {
+                    document.body.removeAttribute('data-theme');
+                    document.body.style.setProperty('--bg-color', document.getElementById('color-bg').value);
+                    document.body.style.setProperty('--text-color', document.getElementById('color-text').value);
+                    document.body.style.setProperty('--screen-bg', document.getElementById('color-bg').value);
+                    document.body.style.setProperty('--btn-bg', document.getElementById('color-bg').value);
+                }
+
+                if (document.getElementById('setting-left-hand').checked) {
+                    document.body.classList.add('left-handed');
+                } else {
+                    document.body.classList.remove('left-handed');
+                }
+
+                const lang = document.getElementById('setting-lang').value;
+                this.translateUI(lang);
+                this.saveSettings();
+            },
+
+            translateUI(lang) {
+                const dict = {
+                    ru: {
+                        config_title: "Настройки конвертации", quality_lbl: "Качество", format_lbl: "Формат изображения",
+                        name_lbl: "Название файла", success_title: "Успешно!", settings_title: "Настройки",
+                        theme_lbl: "Тема", theme_light: "Светлая", theme_dark: "Тёмная", theme_custom: "Своя",
+                        lang_lbl: "Язык", btn_select: "Выбрать PDF", btn_start: "Начать",
+                        format_def_lbl: "Формат по умолчанию", quality_def_lbl: "Качество по умолчанию",
+                        left_hand_lbl: "Режим левши", save_btn: "Сохранить", share_btn: "Поделиться приложением",
+                        review_btn: "Оставить отзыв", done_btn: "Готово", save_exit_btn: "Сохранить и выйти",
+                        copy_btn: "Копировать текст", close_btn: "Закрыть", custom_quality_btn: "Предложить свой % качества",
+                        custom_format_btn: "Предложить новый формат в меню", convert_btn: "Конвертировать",
+                        custom_opt: "Свой вариант", other_opt: "Другой"
+                    },
+                    en: {
+                        config_title: "Conversion Settings", quality_lbl: "Quality", format_lbl: "Image Format",
+                        name_lbl: "File Name", success_title: "Success!", settings_title: "Settings",
+                        theme_lbl: "Theme", theme_light: "Light", theme_dark: "Dark", theme_custom: "Custom",
+                        lang_lbl: "Language", btn_select: "Select PDF", btn_start: "Start",
+                        format_def_lbl: "Default Format", quality_def_lbl: "Default Quality",
+                        left_hand_lbl: "Left-handed mode", save_btn: "Save", share_btn: "Share app",
+                        review_btn: "Leave a review", done_btn: "Done", save_exit_btn: "Save & Exit",
+                        copy_btn: "Copy text", close_btn: "Close", custom_quality_btn: "Suggest custom % quality",
+                        custom_format_btn: "Suggest new format", convert_btn: "Convert",
+                        custom_opt: "Custom", other_opt: "Other"
+                    },
+                    cn: {
+                        config_title: "转换设置", quality_lbl: "质量", format_lbl: "图像格式",
+                        name_lbl: "文件名", success_title: "成功！", settings_title: "设置",
+                        theme_lbl: "主题", theme_light: "光", theme_dark: "暗", theme_custom: "风俗",
+                        lang_lbl: "语言", btn_select: "选择 PDF", btn_start: "开始",
+                        format_def_lbl: "默认格式", quality_def_lbl: "默认质量",
+                        left_hand_lbl: "左撇子模式", save_btn: "保存", share_btn: "分享应用",
+                        review_btn: "留下评论", done_btn: "完成", save_exit_btn: "保存并退出",
+                        copy_btn: "复制文本", close_btn: "关闭", custom_quality_btn: "建议自定义质量百分比",
+                        custom_format_btn: "建议新格式", convert_btn: "兑换",
+                        custom_opt: "自定义", other_opt: "其他"
+                    },
+                    ar: {
+                        config_title: "إعدادات التحويل", quality_lbl: "الجودة", format_lbl: "تنسيق الصورة",
+                        name_lbl: "اسم الملف", success_title: "نجاح!", settings_title: "الإعدادات",
+                        theme_lbl: "السمة", theme_light: "نور", theme_dark: "مظلم", theme_custom: "مخصص",
+                        lang_lbl: "اللغة", btn_select: "حدد PDF", btn_start: "ابدأ",
+                        format_def_lbl: "التنسيق الافتراضي", quality_def_lbl: "الجودة الافتراضية",
+                        left_hand_lbl: "وضع أعسر", save_btn: "حفظ", share_btn: "مشاركة التطبيق",
+                        review_btn: "اترك تقييمًا", done_btn: "منتهي", save_exit_btn: "حفظ وخروج",
+                        copy_btn: "نسخ النص", close_btn: "إغلاق", custom_quality_btn: "اقتراح نسبة جودة",
+                        custom_format_btn: "اقتراح تنسيق جديد", convert_btn: "يتحول",
+                        custom_opt: "مخصص", other_opt: "آخر"
+                    },
+                    by: {
+                        config_title: "Налады канвертацыі", quality_lbl: "Якасць", format_lbl: "Фармат выявы",
+                        name_lbl: "Назва файла", success_title: "Паспяхова!", settings_title: "Налады",
+                        theme_lbl: "Тэма", theme_light: "Светлая", theme_dark: "Цёмная", theme_custom: "Свая",
+                        lang_lbl: "Мова", btn_select: "Выбраць PDF", btn_start: "Пачаць",
+                        format_def_lbl: "Фармат па змаўчанні", quality_def_lbl: "Якасць па змаўчанні",
+                        left_hand_lbl: "Рэжым ляўшуна", save_btn: "Захаваць", share_btn: "Падзяліцца праграмай",
+                        review_btn: "Пакінуць водгук", done_btn: "Гатова", save_exit_btn: "Захаваць і выйсці",
+                        copy_btn: "Капіяваць тэкст", close_btn: "Закрыць", custom_quality_btn: "Прапанаваць свой %",
+                        custom_format_btn: "Прапанаваць новы фармат", convert_btn: "Канвертаваць",
+                        custom_opt: "Свой варыянт", other_opt: "Іншы"
+                    },
+                    de: {
+                        config_title: "Konvertierung", quality_lbl: "Qualität", format_lbl: "Bildformat",
+                        name_lbl: "Dateiname", success_title: "Erfolgreich!", settings_title: "Einstellungen",
+                        theme_lbl: "Thema", theme_light: "Hell", theme_dark: "Dunkel", theme_custom: "Brauch",
+                        lang_lbl: "Sprache", btn_select: "PDF auswählen", btn_start: "Starten",
+                        format_def_lbl: "Standardformat", quality_def_lbl: "Standardqualität",
+                        left_hand_lbl: "Linkshänder-Modus", save_btn: "Speichern", share_btn: "App teilen",
+                        review_btn: "Bewertung hinterlassen", done_btn: "Fertig", save_exit_btn: "Speichern & Beenden",
+                        copy_btn: "Text kopieren", close_btn: "Schließen", custom_quality_btn: "Benutzerdefinierte % vorschlagen",
+                        custom_format_btn: "Neues Format vorschlagen", convert_btn: "Konvertieren",
+                        custom_opt: "Brauch", other_opt: "Andere"
+                    },
+                    ua: {
+                        config_title: "Налаштування", quality_lbl: "Якість", format_lbl: "Формат зображення",
+                        name_lbl: "Назва файлу", success_title: "Успішно!", settings_title: "Налаштування",
+                        theme_lbl: "Тема", theme_light: "Світла", theme_dark: "Темна", theme_custom: "Своя",
+                        lang_lbl: "Мова", btn_select: "Обрати PDF", btn_start: "Почати",
+                        format_def_lbl: "Формат за замовчуванням", quality_def_lbl: "Якість за замовчуванням",
+                        left_hand_lbl: "Режим лівші", save_btn: "Зберегти", share_btn: "Поділитися додатком",
+                        review_btn: "Залишити відгук", done_btn: "Готово", save_exit_btn: "Зберегти та вийти",
+                        copy_btn: "Копіювати текст", close_btn: "Закрити", custom_quality_btn: "Запропонувати свій %",
+                        custom_format_btn: "Запропонувати новий формат", convert_btn: "Конвертувати",
+                        custom_opt: "Свій варіант", other_opt: "Інший"
+                    },
+                    mk: {
+                        config_title: "Поставки за конверзија", quality_lbl: "Квалитет", format_lbl: "Формат на слика",
+                        name_lbl: "Име на датотека", success_title: "Успешно!", settings_title: "Поставки",
+                        theme_lbl: "Тема", theme_light: "Светлина", theme_dark: "Темно", theme_custom: "Обичај",
+                        lang_lbl: "Јазик", btn_select: "Избери PDF", btn_start: "Започни",
+                        format_def_lbl: "Стандарден формат", quality_def_lbl: "Стандарден квалитет",
+                        left_hand_lbl: "Режим за левучари", save_btn: "Зачувај", share_btn: "Сподели апликација",
+                        review_btn: "Остави преглед", done_btn: "Готово", save_exit_btn: "Зачувај и излези",
+                        copy_btn: "Копирај текст", close_btn: "Затвори", custom_quality_btn: "Предложи свој %",
+                        custom_format_btn: "Предложи нов формат", convert_btn: "Конвертирај",
+                        custom_opt: "Обичај", other_opt: "Други"
+                    }
+                };
+                
+                const texts = dict[lang] || dict['ru']; // По умолчанию русский
+                document.querySelectorAll('[data-i18n]').forEach(el => {
+                    const key = el.getAttribute('data-i18n');
+                    if(texts[key]) {
+                        el.innerText = texts[key];
+                    }
+                });
+            }
+        };
+
+        window.onload = () => app.init();
+    </script>
+</body>
+</html>
