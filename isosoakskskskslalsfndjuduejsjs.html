@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Busya PDF to image</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
+
+    <style>
+        :root {
+            --bg-color: #f5f5f7;
+            --text-color: #1d1d1f;
+            --accent-color: #007aff;
+            --accent-hover: #005bb5;
+            --btn-bg: #ffffff;
+            --btn-text: #1d1d1f;
+            --border-color: #d2d2d7;
+            --screen-bg: #e5e5ea;
+            --success-color: #34c759;
+            --danger-color: #ff3b30;
+            --editor-bg: #2c2c2e;
+        }
+
+        [data-theme="dark"] {
+            --bg-color: #000000;
+            --text-color: #f5f5f7;
+            --accent-color: #0a84ff;
+            --btn-bg: #1c1c1e;
+            --btn-text: #f5f5f7;
+            --border-color: #38383a;
+            --screen-bg: #1c1c1e;
+            --editor-bg: #000000;
+        }
+
+        * {
+            box-sizing: border-box; margin: 0; padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg-color); color: var(--text-color);
+            height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        body.left-handed #top-bar { flex-direction: row-reverse; }
+
+        #top-bar {
+            height: 60px; display: flex; justify-content: space-between; align-items: center;
+            padding: 0 20px; flex-shrink: 0; z-index: 10;
+        }
+
+        .battery-status { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 16px; }
+
+        .icon-btn { background: none; border: none; font-size: 28px; color: var(--text-color); cursor: pointer; padding: 10px; transition: transform 0.2s; }
+        .icon-btn:active { transform: scale(0.9); }
+
+        .screen { display: none; flex: 1; flex-direction: column; overflow-y: auto; position: relative; }
+        .screen.active { display: flex; }
+
+        /* Главный экран */
+        #main-screen .top-half { flex: 2; background-color: var(--screen-bg); border-bottom: 2px solid var(--border-color); display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; }
+        #main-screen .bottom-half { flex: 1; display: flex; justify-content: center; align-items: center; padding: 20px; }
+        .big-btn { background-color: var(--accent-color); color: white; border: none; padding: 20px 40px; border-radius: 20px; font-size: 24px; font-weight: bold; cursor: pointer; box-shadow: 0 10px 20px rgba(0,0,0,0.1); transition: background 0.3s, transform 0.1s; }
+        .big-btn:active { transform: scale(0.95); }
+        .big-btn:disabled { background-color: var(--border-color); cursor: not-allowed; transform: none; box-shadow: none; }
+        #pdf-name-display { margin-top: 20px; font-size: 18px; font-weight: 500; text-align: center; word-break: break-all; max-width: 90%; }
+
+        /* Экран редактора */
+        #editor-screen { background-color: var(--editor-bg); color: white; display: none; flex-direction: column; height: 100vh; }
+        #editor-screen.active { display: flex; }
+        .editor-header { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: rgba(0,0,0,0.5); }
+        .editor-header button { background: none; border: none; color: white; font-size: 24px; cursor: pointer; }
+        .editor-canvas-container { flex: 1; display: flex; justify-content: center; align-items: center; overflow: hidden; padding: 10px; position: relative; }
+        #editor-canvas { max-width: 100%; max-height: 100%; object-fit: contain; box-shadow: 0 4px 20px rgba(0,0,0,0.3); touch-action: none; }
+        .editor-toolbar { background: rgba(0,0,0,0.8); padding: 15px; display: flex; flex-direction: column; gap: 12px; position: relative; }
+        .tools-row { display: flex; justify-content: space-around; align-items: center; }
+        .tool-btn { background: #444; color: white; border: none; padding: 10px 20px; border-radius: 10px; font-size: 16px; cursor: pointer; }
+        .tool-btn.active { background: var(--accent-color); }
+        .slider-row { display: flex; align-items: center; gap: 10px; color: white; font-size: 14px; }
+        .slider-row input[type="range"] { flex: 1; }
+        
+        #text-tool-hint {
+            position: absolute; top: -50px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.8); color: white; padding: 10px 20px; border-radius: 20px;
+            font-size: 14px; text-align: center; font-weight: 500; z-index: 100; pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+        /* Настройки и формы */
+        .content-container { padding: 20px; max-width: 600px; margin: 0 auto; width: 100%; padding-bottom: 80px; }
+        .form-group { margin-bottom: 25px; display: flex; flex-direction: column; }
+        .form-group label { font-size: 16px; margin-bottom: 8px; font-weight: 600; }
+        select, input[type="text"], input[type="number"], input[type="color"] {
+            width: 100%; padding: 14px; border-radius: 12px; border: 1px solid var(--border-color);
+            background-color: var(--btn-bg); color: var(--btn-text); font-size: 16px; outline: none;
+        }
+        .btn-link { background: none; border: none; color: var(--accent-color); font-size: 14px; text-align: left; padding: 8px 0; cursor: pointer; margin-top: 5px; font-weight: 500; }
+        .bottom-fixed-btn { position: absolute; bottom: 20px; left: 20px; right: 20px; margin: 0 auto; max-width: 560px; }
+        .action-btn { width: 100%; background-color: var(--btn-bg); color: var(--text-color); border: 1px solid var(--border-color); padding: 16px; border-radius: 14px; font-size: 18px; font-weight: 600; cursor: pointer; margin-bottom: 12px; transition: background 0.2s; }
+        .action-btn.primary { background-color: var(--accent-color); color: white; border: none; }
+        .action-btn.vk { background-color: #0077FF; color: white; border: none; }
+
+        /* Модальные окна */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: none; justify-content: center; align-items: center; z-index: 200; padding: 20px; }
+        .modal-overlay.active { display: flex; }
+        .modal-content { background: var(--bg-color); padding: 25px; border-radius: 20px; width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+        .modal-title { font-size: 20px; font-weight: bold; margin-bottom: 15px; }
+        .copy-box { background: var(--btn-bg); border: 1px solid var(--border-color); padding: 15px; border-radius: 12px; margin-bottom: 15px; font-size: 14px; }
+
+        /* Экран успеха */
+        #success-screen { justify-content: center; align-items: center; text-align: center; padding: 20px; }
+        .success-icon { font-size: 100px; color: var(--success-color); margin-bottom: 20px; animation: popIn 0.5s ease-out; }
+        @keyframes popIn { 0% { transform: scale(0); } 80% { transform: scale(1.1); } 100% { transform: scale(1); } }
+        .feedback-buttons { display: none; flex-direction: column; width: 100%; margin-top: 10px; }
+        .feedback-buttons.active { display: flex; }
+
+        /* Loader */
+        #loader { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); color: white; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; font-size: 20px; }
+        .spinner { border: 6px solid #f3f3f3; border-top: 6px solid var(--accent-color); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin-bottom: 15px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .hidden { display: none !important; }
+        .flex-row { display: flex; align-items: center; justify-content: space-between; }
+        .mt-15 { margin-top: 15px; }
+    </style>
+</head>
+<body>
+
+    <div id="top-bar">
+        <div class="battery-status">
+            <span id="battery-icon">🔋</span>
+            <span id="battery-pct">--%</span>
+        </div>
+        <button class="icon-btn" id="btn-settings" onclick="app.showScreen('settings-screen')">⚙️</button>
+    </div>
+
+    <div id="main-screen" class="screen active">
+        <div class="top-half">
+            <button class="big-btn" onclick="document.getElementById('file-input').click()" data-i18n="select_pdf">Выбрать PDF</button>
+            <input type="file" id="file-input" accept="application/pdf" class="hidden" onchange="app.handleFileSelect(event)">
+            <div id="pdf-name-display" data-i18n="file_not_selected">Файл не выбран</div>
+        </div>
+        <div class="bottom-half">
+            <button class="big-btn" id="btn-start" disabled onclick="app.openEditor()" data-i18n="start">Начать</button>
+        </div>
+    </div>
+
+    <div id="editor-screen" class="screen">
+        <div class="editor-header">
+            <button onclick="app.showScreen('main-screen')">✖</button>
+            <div style="font-size: 18px; font-weight: bold;">
+                <button onclick="app.editorPrevPage()" style="margin-right: 15px;">◀</button>
+                <span id="editor-page-indicator">1 / 1</span>
+                <button onclick="app.editorNextPage()" style="margin-left: 15px;">▶</button>
+            </div>
+            <button onclick="app.finishEditing()">✅</button>
+        </div>
+        
+        <div class="editor-canvas-container" id="canvas-container">
+            <canvas id="editor-canvas"></canvas>
+        </div>
+
+        <div class="editor-toolbar">
+            <div id="text-tool-hint" class="hidden" data-i18n="text_hint">Нажмите на любую точку фото для добавления текста</div>
+            <div class="tools-row">
+                <button class="tool-btn active" id="tool-draw" onclick="app.setTool('draw')" data-i18n="tool_brush">Кисть</button>
+                <button class="tool-btn" id="tool-text" onclick="app.setTool('text')" data-i18n="tool_text">Текст</button>
+                <input type="color" id="editor-color" value="#ff0000" style="width: 50px; padding: 0; height: 40px; border-radius: 8px;">
+                <button class="tool-btn" onclick="app.clearCurrentPage()" data-i18n="tool_clear">Очистить</button>
+            </div>
+            <div class="slider-row">
+                <span data-i18n="brush_size" style="width: 100px;">Размер кисти:</span>
+                <input type="range" id="brush-size" min="1" max="50" value="4">
+            </div>
+            <div class="slider-row">
+                <span data-i18n="tool_bright" style="width: 100px;">Яркость:</span>
+                <input type="range" id="slider-brightness" min="0" max="200" value="100" oninput="app.updateFilters()">
+            </div>
+            <div class="slider-row">
+                <span data-i18n="tool_contrast" style="width: 100px;">Контраст:</span>
+                <input type="range" id="slider-contrast" min="0" max="200" value="100" oninput="app.updateFilters()">
+            </div>
+        </div>
+    </div>
+
+    <div id="config-screen" class="screen">
+        <div class="content-container">
+            <h2 style="margin-bottom: 20px;" data-i18n="config_title">Настройки конвертации</h2>
+            <div class="form-group">
+                <label data-i18n="quality_lbl">Качество</label>
+                <select id="select-quality" onchange="app.handleQualityChange('select-quality', 'input-custom-quality')"></select>
+                <input type="number" id="input-custom-quality" class="hidden mt-15" placeholder="Введите %, не ниже 1%" min="1" max="100">
+                <button class="btn-link" onclick="app.openModal('modal-quality')" data-i18n="suggest_q">Предложить свой % качества в меню</button>
+            </div>
+            <div class="form-group">
+                <label data-i18n="format_lbl">Формат изображения</label>
+                <select id="select-format" onchange="app.handleFormatChange('select-format', 'input-custom-format')"></select>
+                <input type="text" id="input-custom-format" class="hidden mt-15" placeholder="введите формат">
+                <button class="btn-link" onclick="app.openModal('modal-format')" data-i18n="suggest_f">Предложить новый формат в меню</button>
+            </div>
+            <div class="form-group">
+                <label data-i18n="name_lbl">Название файла</label>
+                <input type="text" id="input-filename" data-i18n-ph="filename_ph" placeholder="введите название">
+            </div>
+            <button class="big-btn primary bottom-fixed-btn" onclick="app.convertPDF()" data-i18n="convert_btn">Конвертировать</button>
+        </div>
+    </div>
+
+    <div id="success-screen" class="screen">
+        <div class="content-container" style="display:flex; flex-direction:column; align-items:center;">
+            <div class="success-icon">✅</div>
+            <h2 style="margin-bottom: 30px;" data-i18n="success_title">Успешно!</h2>
+            <div style="width: 100%; max-width: 400px;">
+                <button class="action-btn primary" onclick="app.saveImages()" data-i18n="save_btn">Сохранить</button>
+                <button class="action-btn" onclick="app.sharePhotos()" data-i18n="share_photos">Поделиться фото</button>
+                <button class="action-btn" onclick="app.openIn()" data-i18n="open_in">Открыть в...</button>
+                <button class="action-btn" onclick="app.setAs()" data-i18n="set_as">Установить как...</button>
+                <button class="action-btn" onclick="app.printPhotos()" data-i18n="print_photos">Распечатать</button>
+                <button class="action-btn vk" onclick="app.shareVK()" data-i18n="share_vk">Поделиться фото в VK</button>
+                <button class="action-btn" onclick="app.shareApp()" data-i18n="share_app">Поделиться приложением</button>
+                
+                <button class="action-btn" onclick="app.toggleFeedback()" data-i18n="feedback_btn">Оставить отзыв</button>
+                <div id="feedback-btns" class="feedback-buttons">
+                    <button class="action-btn" style="background:#24292e; color:white;" onclick="window.open('https://github.com/berestnevnikolaj671-kot/Busya-PDF-to-image-convecter', '_blank')" data-i18n="github_btn">Оставить звёздочку на GitHub</button>
+                    <button class="action-btn" style="background:#673ab7; color:white;" onclick="window.open('https://forms.gle/gWT4RRb1mZBkU9dk7', '_blank')" data-i18n="google_form_btn">Оставить отзыв на Google формы</button>
+                </div>
+                <button class="action-btn" style="margin-top:20px;" onclick="app.resetApp()" data-i18n="done_btn">Готово</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="settings-screen" class="screen">
+        <div class="content-container">
+            <div class="flex-row" style="margin-bottom: 20px;">
+                <h2 data-i18n="settings_title">Настройки</h2>
+                <button class="icon-btn" onclick="app.showScreen('main-screen')">✖</button>
+            </div>
+            <div class="form-group">
+                <label data-i18n="theme_lbl">Тема</label>
+                <select id="setting-theme" onchange="app.applySettings()">
+                    <option value="light" data-i18n-opt="theme_light">Светлая</option>
+                    <option value="dark" data-i18n-opt="theme_dark">Тёмная</option>
+                    <option value="custom" data-i18n-opt="theme_custom">Своя</option>
+                </select>
+                <div id="custom-theme-colors" class="hidden mt-15 flex-row">
+                    <div>Фон: <input type="color" id="color-bg" value="#ffffff" onchange="app.applySettings()"></div>
+                    <div>Текст: <input type="color" id="color-text" value="#000000" onchange="app.applySettings()"></div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label data-i18n="lang_lbl">Язык</label>
+                <select id="setting-lang" onchange="app.applySettings()">
+                    <option value="ru">🇷🇺 Русский</option><option value="en">🇬🇧 English</option>
+                    <option value="cn">🇨🇳 中文</option><option value="ar">🇸🇦 العربية</option>
+                    <option value="by">🇧🇾 Беларуская</option><option value="de">🇩🇪 Deutsch</option>
+                    <option value="ua">🇺🇦 Українська</option><option value="mk">🇲🇰 Македонски</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label data-i18n="format_def_lbl">Формат по умолчанию</label>
+                <select id="setting-format" onchange="app.applySettings()"></select>
+            </div>
+            <div class="form-group">
+                <label data-i18n="quality_def_lbl">Качество по умолчанию</label>
+                <select id="setting-quality" onchange="app.applySettings()"></select>
+            </div>
+            <div class="form-group flex-row" style="justify-content: flex-start; gap: 15px;">
+                <input type="checkbox" id="setting-left-hand" style="width: 20px; height: 20px;" onchange="app.applySettings()">
+                <label style="margin:0; cursor:pointer;" for="setting-left-hand" data-i18n="left_hand_lbl">Режим левши</label>
+            </div>
+            <button class="action-btn primary mt-15" onclick="app.showScreen('main-screen')" data-i18n="save_exit_btn">Сохранить и выйти</button>
+        </div>
+    </div>
+
+    <div id="modal-alert" class="modal-overlay">
+        <div class="modal-content" style="text-align: center;">
+            <div class="modal-title" id="alert-message">Сообщение</div>
+            <button class="action-btn primary" onclick="app.closeModal('modal-alert')" style="margin-top:20px;" data-i18n="ok_btn">ОК</button>
+        </div>
+    </div>
+    <div id="modal-prompt" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-title" id="prompt-message" data-i18n="enter_text">Введите текст</div>
+            <input type="text" id="prompt-input" style="width:100%; padding:12px; margin-bottom:20px; border-radius:10px; border:1px solid var(--border-color);">
+            <div class="flex-row" style="gap:10px;">
+                <button class="action-btn" onclick="app.cancelPrompt()" data-i18n="cancel_btn">Отмена</button>
+                <button class="action-btn primary" onclick="app.confirmPrompt()" data-i18n="ok_btn">ОК</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="modal-quality" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-title" data-i18n="suggest_q">Предложить % качества</div>
+            <div style="margin-bottom: 20px;">
+                SMS: <a href="sms:+79102563060">+7 910 256 30 60</a><br>
+                MAX: <a href="tel:+79202419565">+7 920 241 95 65</a><br>
+                Email: <a href="mailto:berestnevnikolaj671@gmail.com">berestnevnikolaj671@gmail.com</a><br>
+                Vi🟪er: <a href="viber://chat?number=%2B79102563060">+7 910 256 30 60</a><br>
+                Google форма: <a href="https://forms.gle/8mq3as1qpBNk72BQ9" target="_blank">Открыть</a>
+            </div>
+            <button class="action-btn" onclick="app.closeModal('modal-quality')" data-i18n="close_btn">Закрыть</button>
+        </div>
+    </div>
+    <div id="modal-format" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-title" data-i18n="suggest_f">Предложить формат</div>
+            <div style="margin-bottom: 20px;">
+                SMS: <a href="sms:+79102563060">+7 910 256 30 60</a><br>
+                MAX: <a href="tel:+79202419565">+7 920 241 95 65</a><br>
+                Email: <a href="mailto:berestnevnikolaj671@gmail.com">berestnevnikolaj671@gmail.com</a><br>
+                Vi🟪er: <a href="viber://chat?number=%2B79102563060">+7 910 256 30 60</a><br>
+                Google форма: <a href="https://forms.gle/iziCd8ePTEN8Xv8G9" target="_blank">Открыть</a>
+            </div>
+            <button class="action-btn" onclick="app.closeModal('modal-format')" data-i18n="close_btn">Закрыть</button>
+        </div>
+    </div>
+
+    <div id="loader"><div class="spinner"></div><div id="loader-text">Загрузка...</div></div>
+
+    <script>
+        const app = {
+            currentFile: null, pdfDoc: null, convertedBlobs: [],
+            editorState: {}, currentEditorPage: 1, editorCanvas: null, editorCtx: null, offscreenCanvas: null,
+            currentTool: 'draw', isDrawing: false, currentPath: null, promptCallback: null,
+            
+            // Text Drag and Scale State
+            draggingTextIdx: -1, isDraggingText: false, initialPinchDist: null, initialPinchSize: null,
+
+            formats: [
+                {val: 'image/jpeg', label: 'JPG'}, {val: 'image/png', label: 'PNG'}, {val: 'image/gif', label: 'GIF'}, 
+                {val: 'image/bmp', label: 'BMP'}, {val: 'image/tiff', label: 'TIFF'}, {val: 'image/dng', label: 'DNG'}, 
+                {val: 'image/heic', label: 'HEIC'}, {val: 'image/webp', label: 'WebP'}, {val: 'image/avif', label: 'AVIF'}, 
+                {val: 'image/svg+xml', label: 'SVG'}, {val: 'other', label: 'Другой', i18n: 'other_opt'}
+            ],
+            qualities: [
+                {val: 'original', label: 'Оригинал', i18n: 'original_opt'}, {val: '100', label: '100%'}, {val: '98', label: '98%'}, 
+                {val: '95', label: '95%'}, {val: '90', label: '90%'}, {val: '85', label: '85%'}, {val: '80', label: '80%'}, 
+                {val: '75', label: '75%'}, {val: '67', label: '67%'}, {val: '60', label: '60%'}, {val: '55', label: '55%'}, 
+                {val: '50', label: '50%'}, {val: '45', label: '45%'}, {val: '40', label: '40%'}, {val: '35', label: '35%'}, 
+                {val: '30', label: '30%'}, {val: '25', label: '25%'}, {val: '10', label: '10%'}, {val: '5', label: '5%'}, 
+                {val: '1', label: '1%'}, {val: 'custom', label: 'Свой вариант', i18n: 'custom_opt'}
+            ],
+
+            async init() {
+                this.initBattery();
+                this.populateDropdowns();
+                this.loadSettings();
+                this.applySettings();
+                
+                this.editorCanvas = document.getElementById('editor-canvas');
+                this.editorCtx = this.editorCanvas.getContext('2d');
+                this.offscreenCanvas = document.createElement('canvas');
+                this.setupEditorEvents();
+                await this.initOfflineEngine();
+            },
+
+            initBattery() {
+                if ('getBattery' in navigator) {
+                    navigator.getBattery().then(b => {
+                        const upd = () => {
+                            document.getElementById('battery-pct').innerText = `${Math.round(b.level * 100)}%`;
+                            document.getElementById('battery-icon').innerText = b.charging ? '⚡' : '🔋';
+                        };
+                        upd(); b.addEventListener('levelchange', upd); b.addEventListener('chargingchange', upd);
+                    });
+                } else document.querySelector('.battery-status').style.display = 'none';
+            },
+
+            async initOfflineEngine() {
+                this.showLoader(true, "Скачивание движка (1 раз)...");
+                const libUrl = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
+                const workerUrl = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+                try {
+                    const cache = await caches.open('busya-pdf-engine-v3');
+                    let libRes = await cache.match(libUrl);
+                    if (!libRes) { await cache.add(libUrl); libRes = await cache.match(libUrl); }
+                    const libText = await libRes.text();
+                    let workerRes = await cache.match(workerUrl);
+                    if (!workerRes) { await cache.add(workerUrl); workerRes = await cache.match(workerUrl); }
+                    const workerText = await workerRes.text();
+
+                    const script = document.createElement('script'); script.textContent = libText; document.head.appendChild(script);
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([workerText], { type: 'text/javascript' }));
+                } catch (e) {
+                    const script = document.createElement('script'); script.src = libUrl; document.head.appendChild(script);
+                    script.onload = () => { pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl; };
+                }
+                this.showLoader(false);
+            },
+
+            populateDropdowns() {
+                const build = (arr) => arr.map(i => `<option value="${i.val}" ${i.i18n ? `data-i18n-opt="${i.i18n}"` : ''}>${i.label}</option>`).join('');
+                document.getElementById('select-format').innerHTML = build(this.formats);
+                document.getElementById('setting-format').innerHTML = build(this.formats);
+                document.getElementById('select-quality').innerHTML = build(this.qualities);
+                document.getElementById('setting-quality').innerHTML = build(this.qualities);
+            },
+
+            showScreen(id) {
+                document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+                document.getElementById(id).classList.add('active');
+                document.getElementById('top-bar').style.display = (id === 'main-screen') ? 'flex' : 'none';
+            },
+
+            getTranslation(key) {
+                const lang = document.getElementById('setting-lang').value;
+                const texts = this.getDict()[lang] || this.getDict()['en'];
+                return texts[key] || '';
+            },
+
+            showAlert(msg) { document.getElementById('alert-message').innerText = msg; this.openModal('modal-alert'); },
+            showPrompt(msg, cb) { 
+                document.getElementById('prompt-message').innerText = msg; document.getElementById('prompt-input').value = '';
+                this.openModal('modal-prompt'); this.promptCallback = cb; setTimeout(() => document.getElementById('prompt-input').focus(), 100);
+            },
+            cancelPrompt() { this.closeModal('modal-prompt'); },
+            confirmPrompt() { this.closeModal('modal-prompt'); if(this.promptCallback) this.promptCallback(document.getElementById('prompt-input').value); },
+            openModal(id) { document.getElementById(id).classList.add('active'); },
+            closeModal(id) { document.getElementById(id).classList.remove('active'); },
+
+            handleFileSelect(e) {
+                const f = e.target.files[0];
+                if (f && f.type === 'application/pdf') {
+                    this.currentFile = f; document.getElementById('pdf-name-display').textContent = f.name;
+                    document.getElementById('btn-start').disabled = false; document.getElementById('input-filename').value = f.name.replace('.pdf', '');
+                } else this.showAlert(this.getTranslation('file_not_selected'));
+            },
+            handleQualityChange(sId, iId) { document.getElementById(iId).classList.toggle('hidden', document.getElementById(sId).value !== 'custom'); },
+            handleFormatChange(sId, iId) { document.getElementById(iId).classList.toggle('hidden', document.getElementById(sId).value !== 'other'); },
+
+            async openEditor() {
+                if (!this.currentFile) return;
+                this.showLoader(true, "Открытие редактора...");
+                try {
+                    const ab = await this.currentFile.arrayBuffer();
+                    this.pdfDoc = await pdfjsLib.getDocument({data: ab}).promise;
+                    this.editorState = {}; this.currentEditorPage = 1;
+                    await this.renderEditorPage(); this.showScreen('editor-screen');
+                } catch (e) { this.showAlert("Ошибка чтения PDF."); }
+                this.showLoader(false);
+            },
+
+            async renderEditorPage() {
+                document.getElementById('editor-page-indicator').innerText = `${this.currentEditorPage} / ${this.pdfDoc.numPages}`;
+                const page = await this.pdfDoc.getPage(this.currentEditorPage);
+                const vp = page.getViewport({ scale: 1.5 });
+                
+                this.offscreenCanvas.width = vp.width; this.offscreenCanvas.height = vp.height;
+                this.editorCanvas.width = vp.width; this.editorCanvas.height = vp.height;
+                
+                await page.render({ canvasContext: this.offscreenCanvas.getContext('2d'), viewport: vp }).promise;
+                
+                if (!this.editorState[this.currentEditorPage]) this.editorState[this.currentEditorPage] = { paths: [], texts: [], bright: 100, contr: 100 };
+                const s = this.editorState[this.currentEditorPage];
+                document.getElementById('slider-brightness').value = s.bright; document.getElementById('slider-contrast').value = s.contr;
+                this.updateEditorCanvas();
+            },
+
+            updateEditorCanvas() {
+                const s = this.editorState[this.currentEditorPage];
+                this.editorCtx.clearRect(0, 0, this.editorCanvas.width, this.editorCanvas.height);
+                
+                this.editorCtx.filter = `brightness(${s.bright}%) contrast(${s.contr}%)`;
+                this.editorCtx.drawImage(this.offscreenCanvas, 0, 0);
+                this.editorCtx.filter = 'none';
+
+                s.paths.forEach(p => {
+                    this.editorCtx.beginPath(); this.editorCtx.strokeStyle = p.color; this.editorCtx.lineWidth = p.size;
+                    this.editorCtx.lineCap = 'round'; this.editorCtx.lineJoin = 'round';
+                    p.points.forEach((pt, i) => { if (i===0) this.editorCtx.moveTo(pt.x, pt.y); else this.editorCtx.lineTo(pt.x, pt.y); });
+                    this.editorCtx.stroke();
+                });
+
+                s.texts.forEach((t, i) => {
+                    this.editorCtx.fillStyle = t.color;
+                    this.editorCtx.font = `bold ${t.size}px Arial`;
+                    // Если текст перетаскивается, даем ему небольшой эффект тени
+                    if (this.isDraggingText && this.draggingTextIdx === i) {
+                        this.editorCtx.shadowColor = "rgba(0,0,0,0.5)"; this.editorCtx.shadowBlur = 10;
+                    } else { this.editorCtx.shadowBlur = 0; }
+                    this.editorCtx.fillText(t.text, t.x, t.y);
+                    this.editorCtx.shadowBlur = 0; // reset
+                });
+            },
+
+            setupEditorEvents() {
+                const getPos = (e) => {
+                    const rect = this.editorCanvas.getBoundingClientRect();
+                    const scaleX = this.editorCanvas.width / rect.width;
+                    const scaleY = this.editorCanvas.height / rect.height;
+                    const cX = e.touches ? e.touches[0].clientX : e.clientX;
+                    const cY = e.touches ? e.touches[0].clientY : e.clientY;
+                    return { x: (cX - rect.left) * scaleX, y: (cY - rect.top) * scaleY };
+                };
+
+                const startAct = (e) => {
+                    if (e.cancelable) e.preventDefault();
+                    const pos = getPos(e);
+                    if (this.currentTool === 'text') {
+                        const texts = this.editorState[this.currentEditorPage].texts;
+                        let found = false;
+                        for (let i = texts.length - 1; i >= 0; i--) {
+                            const t = texts[i];
+                            this.editorCtx.font = `bold ${t.size}px Arial`;
+                            const m = this.editorCtx.measureText(t.text);
+                            // Проверка попали ли в текст (y учитывает высоту шрифта вверх)
+                            if (pos.x >= t.x && pos.x <= t.x + m.width && pos.y <= t.y && pos.y >= t.y - t.size) {
+                                this.draggingTextIdx = i; this.isDraggingText = true; found = true; break;
+                            }
+                        }
+                        if (!found) {
+                            this.showPrompt(this.getTranslation('enter_text'), (val) => {
+                                if (val) { texts.push({ text: val, x: pos.x, y: pos.y, color: document.getElementById('editor-color').value, size: 40 }); this.updateEditorCanvas(); }
+                            });
+                        }
+                    } else if (this.currentTool === 'draw') {
+                        this.isDrawing = true;
+                        this.currentPath = { color: document.getElementById('editor-color').value, size: document.getElementById('brush-size').value, points: [pos] };
+                    }
+                };
+                
+                const moveAct = (e) => {
+                    if (this.currentTool === 'text' && this.isDraggingText && this.draggingTextIdx !== -1) {
+                        e.preventDefault();
+                        const texts = this.editorState[this.currentEditorPage].texts;
+                        
+                        // Pinch to zoom (двумя пальцами)
+                        if (e.touches && e.touches.length === 2) {
+                            const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+                            if (!this.initialPinchDist) {
+                                this.initialPinchDist = dist; this.initialPinchSize = texts[this.draggingTextIdx].size;
+                            } else {
+                                texts[this.draggingTextIdx].size = Math.max(10, this.initialPinchSize * (dist / this.initialPinchDist));
+                            }
+                        } else {
+                            // Перемещение
+                            const pos = getPos(e);
+                            texts[this.draggingTextIdx].x = pos.x; texts[this.draggingTextIdx].y = pos.y;
+                        }
+                        this.updateEditorCanvas();
+                    } else if (this.currentTool === 'draw' && this.isDrawing) {
+                        e.preventDefault();
+                        const pos = getPos(e);
+                        this.currentPath.points.push(pos);
+                        
+                        // Отрисовка в реальном времени
+                        this.editorCtx.lineTo(pos.x, pos.y);
+                        this.editorCtx.lineWidth = this.currentPath.size;
+                        this.editorCtx.stroke();
+                    }
+                };
+                
+                const endAct = () => {
+                    if (this.currentTool === 'text') {
+                        this.isDraggingText = false; this.draggingTextIdx = -1;
+                        this.initialPinchDist = null; this.initialPinchSize = null;
+                        this.updateEditorCanvas();
+                    } else if (this.currentTool === 'draw' && this.isDrawing) {
+                        this.isDrawing = false;
+                        if (this.currentPath && this.currentPath.points.length > 1) { this.editorState[this.currentEditorPage].paths.push(this.currentPath); }
+                        this.updateEditorCanvas();
+                    }
+                };
+
+                this.editorCanvas.addEventListener('mousedown', startAct); this.editorCanvas.addEventListener('mousemove', moveAct); window.addEventListener('mouseup', endAct);
+                this.editorCanvas.addEventListener('touchstart', startAct, {passive: false}); this.editorCanvas.addEventListener('touchmove', moveAct, {passive: false}); window.addEventListener('touchend', endAct);
+            },
+
+            setTool(tool) {
+                this.currentTool = tool;
+                document.getElementById('tool-draw').classList.toggle('active', tool === 'draw');
+                document.getElementById('tool-text').classList.toggle('active', tool === 'text');
+                
+                if (tool === 'text') {
+                    const hint = document.getElementById('text-tool-hint');
+                    hint.innerText = this.getTranslation('text_hint');
+                    hint.classList.remove('hidden');
+                    setTimeout(() => hint.classList.add('hidden'), 3000);
+                }
+            },
+
+            updateFilters() {
+                if(!this.editorState[this.currentEditorPage]) return;
+                this.editorState[this.currentEditorPage].bright = document.getElementById('slider-brightness').value;
+                this.editorState[this.currentEditorPage].contr = document.getElementById('slider-contrast').value;
+                this.updateEditorCanvas();
+            },
+
+            clearCurrentPage() { this.editorState[this.currentEditorPage].paths = []; this.editorState[this.currentEditorPage].texts = []; this.updateEditorCanvas(); },
+            async editorPrevPage() { if (this.currentEditorPage > 1) { this.currentEditorPage--; await this.renderEditorPage(); } },
+            async editorNextPage() { if (this.currentEditorPage < this.pdfDoc.numPages) { this.currentEditorPage++; await this.renderEditorPage(); } },
+            finishEditing() { this.showScreen('config-screen'); },
+
+            async convertPDF() {
+                if (!this.pdfDoc) return;
+                this.showLoader(true, "Конвертация...");
+                this.convertedBlobs = [];
+                
+                try {
+                    const formatSel = document.getElementById('select-format').value;
+                    let mimeType = formatSel; let ext = formatSel.split('/')[1] || 'jpg';
+                    if (formatSel === 'other') { ext = document.getElementById('input-custom-format').value || 'jpg'; mimeType = 'image/jpeg'; }
+
+                    const qualitySel = document.getElementById('select-quality').value;
+                    let quality = 1.0;
+                    if (qualitySel === 'custom') { 
+                        let c = parseInt(document.getElementById('input-custom-quality').value); 
+                        quality = (isNaN(c) || c < 1) ? 0.01 : Math.min(1.0, c / 100); 
+                    } else if (qualitySel !== 'original') {
+                        quality = parseInt(qualitySel) / 100;
+                    }
+                    
+                    // ИСПРАВЛЕНИЕ: Форматы вроде PNG не поддерживают lossy-сжатие (quality) в браузере.
+                    // Чтобы качество РЕАЛЬНО снижалось для ЛЮБОГО формата, мы жестко урезаем физический масштаб холста пропорционально %.
+                    // scale 3.0 = оригинал. 100% = scale 2.0. При 1% масштаб будет всего 0.02 (сильнейшая пикселизация).
+                    let scale = qualitySel === 'original' ? 3.0 : Math.max(0.02, 2.0 * quality);
+
+                    for (let i = 1; i <= this.pdfDoc.numPages; i++) {
+                        document.getElementById('loader-text').innerText = `Конвертация... ${i} из ${this.pdfDoc.numPages}`;
+                        const page = await this.pdfDoc.getPage(i);
+                        const vp = page.getViewport({ scale: scale });
+                        
+                        const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d');
+                        canvas.height = vp.height; canvas.width = vp.width;
+
+                        if (mimeType === 'image/jpeg' || mimeType === 'image/svg+xml') { ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+                        
+                        const pdfCanvas = document.createElement('canvas'); pdfCanvas.width = canvas.width; pdfCanvas.height = canvas.height;
+                        await page.render({ canvasContext: pdfCanvas.getContext('2d'), viewport: vp }).promise;
+
+                        const s = this.editorState[i];
+                        if (s) {
+                            ctx.filter = `brightness(${s.bright}%) contrast(${s.contr}%)`; ctx.drawImage(pdfCanvas, 0, 0); ctx.filter = 'none';
+                            const sX = canvas.width / this.offscreenCanvas.width; const sY = canvas.height / this.offscreenCanvas.height;
+
+                            s.paths.forEach(p => {
+                                ctx.beginPath(); ctx.strokeStyle = p.color; ctx.lineWidth = p.size * sX; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+                                p.points.forEach((pt, j) => { if (j===0) ctx.moveTo(pt.x*sX, pt.y*sY); else ctx.lineTo(pt.x*sX, pt.y*sY); });
+                                ctx.stroke();
+                            });
+                            s.texts.forEach(t => { ctx.fillStyle = t.color; ctx.font = `bold ${t.size*sX}px Arial`; ctx.fillText(t.text, t.x*sX, t.y*sY); });
+                        } else ctx.drawImage(pdfCanvas, 0, 0);
+
+                        if (mimeType === 'image/svg+xml') {
+                            const dataUrl = canvas.toDataURL('image/jpeg', quality);
+                            const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvas.width}" height="${canvas.height}"><image href="${dataUrl}" width="100%" height="100%"/></svg>`;
+                            this.convertedBlobs.push({ blob: new Blob([svgStr], { type: 'image/svg+xml' }), ext: 'svg' });
+                        } else {
+                            await new Promise(res => { canvas.toBlob(b => { this.convertedBlobs.push({ blob: b, ext: ext }); res(); }, mimeType, quality); });
+                        }
+                    }
+                    this.showLoader(false); this.showScreen('success-screen');
+                } catch (e) { console.error(e); this.showLoader(false); this.showAlert("Ошибка при конвертации."); }
+            },
+
+            saveImages() {
+                if (this.convertedBlobs.length === 0) return;
+                let base = document.getElementById('input-filename').value.trim() || 'Photo';
+                this.convertedBlobs.forEach((item, idx) => {
+                    setTimeout(() => {
+                        const a = document.createElement('a'); const url = URL.createObjectURL(item.blob);
+                        a.href = url; a.download = `${base}${this.convertedBlobs.length > 1 ? `_${idx + 1}` : ''}.${item.ext}`;
+                        document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(url), 10000);
+                    }, idx * 400);
+                });
+            },
+
+            async sharePhotos() {
+                if (this.convertedBlobs.length === 0) return;
+                try {
+                    const files = this.convertedBlobs.map((item, i) => {
+                        const n = document.getElementById('input-filename').value.trim() || 'Photo';
+                        return new File([item.blob], `${n}_${i+1}.${item.ext}`, { type: item.blob.type });
+                    });
+                    if (navigator.canShare && navigator.canShare({ files: files })) await navigator.share({ files: files });
+                    else this.showAlert("Устройство не поддерживает прямую отправку.");
+                } catch (e) { console.error(e); }
+            },
+            
+            async openIn() {
+                this.sharePhotos(); // На мобильных устройствах navigator.share и есть меню "Открыть в..."
+            },
+            
+            setAs() {
+                this.showAlert(this.getTranslation('set_as_hint'));
+            },
+
+            printPhotos() {
+                if (this.convertedBlobs.length === 0) return;
+                const pw = window.open('', '_blank');
+                let html = '<html><head><title>Print</title><style>body{margin:0;padding:0;} img { max-width:100%; display:block; margin:0 auto; page-break-after:always; }</style></head><body>';
+                this.convertedBlobs.forEach(i => { html += `<img src="${URL.createObjectURL(i.blob)}" onload="URL.revokeObjectURL(this.src)">`; });
+                html += '</body></html>'; pw.document.write(html); pw.document.close();
+                setTimeout(() => { pw.print(); pw.close(); }, 500);
+            },
+
+            shareVK() {
+                const s = Date.now(); window.location.href = 'vk://';
+                setTimeout(() => { if (Date.now() - s < 2000) this.showAlert(this.getTranslation('vk_not_installed')); }, 1000);
+            },
+
+            shareApp() {
+                const text = "Привет! Нашёл бесплатную программу от BusyaTM для конвертации PDF в фото. Без рекламы. Скачать можно на GitHub - https://github.com/berestnevnikolaj671-kot/Busya-PDF-to-image-convecter";
+                if (navigator.share) navigator.share({ text: text }).catch(console.error);
+                else {
+                    const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
+                    document.execCommand('copy'); document.body.removeChild(ta); this.showAlert("Скопировано!");
+                }
+            },
+
+            toggleFeedback() { document.getElementById('feedback-btns').classList.toggle('active'); },
+            resetApp() {
+                this.currentFile = null; this.pdfDoc = null; this.convertedBlobs = []; this.editorState = {};
+                document.getElementById('file-input').value = ''; document.getElementById('btn-start').disabled = true;
+                document.getElementById('feedback-btns').classList.remove('active');
+                this.applySettings(); this.showScreen('main-screen');
+            },
+            showLoader(s, t) { document.getElementById('loader').style.display = s ? 'flex' : 'none'; if(s&&t) document.getElementById('loader-text').innerText = t; },
+
+            saveSettings() {
+                localStorage.setItem('busya-settings-v4', JSON.stringify({
+                    theme: document.getElementById('setting-theme').value, bgColor: document.getElementById('color-bg').value,
+                    textColor: document.getElementById('color-text').value, lang: document.getElementById('setting-lang').value,
+                    defFmt: document.getElementById('setting-format').value, defQual: document.getElementById('setting-quality').value,
+                    left: document.getElementById('setting-left-hand').checked
+                }));
+            },
+            loadSettings() {
+                const s = JSON.parse(localStorage.getItem('busya-settings-v4') || '{}');
+                if(s.theme) document.getElementById('setting-theme').value = s.theme;
+                if(s.bgColor) document.getElementById('color-bg').value = s.bgColor;
+                if(s.textColor) document.getElementById('color-text').value = s.textColor;
+                if(s.lang) document.getElementById('setting-lang').value = s.lang;
+                if(s.defFmt) { document.getElementById('setting-format').value = s.defFmt; document.getElementById('select-format').value = s.defFmt; }
+                if(s.defQual) { document.getElementById('setting-quality').value = s.defQual; document.getElementById('select-quality').value = s.defQual; }
+                if(s.left !== undefined) document.getElementById('setting-left-hand').checked = s.left;
+            },
+            applySettings() {
+                const th = document.getElementById('setting-theme').value;
+                document.getElementById('custom-theme-colors').classList.toggle('hidden', th !== 'custom');
+                if (th === 'dark') { document.body.setAttribute('data-theme', 'dark'); document.body.style.cssText = ''; } 
+                else if (th === 'light') { document.body.removeAttribute('data-theme'); document.body.style.cssText = ''; } 
+                else {
+                    document.body.removeAttribute('data-theme'); document.body.style.setProperty('--bg-color', document.getElementById('color-bg').value);
+                    document.body.style.setProperty('--text-color', document.getElementById('color-text').value);
+                    document.body.style.setProperty('--screen-bg', document.getElementById('color-bg').value);
+                    document.body.style.setProperty('--btn-bg', document.getElementById('color-bg').value);
+                }
+                document.body.classList.toggle('left-handed', document.getElementById('setting-left-hand').checked);
+                const l = document.getElementById('setting-lang').value; document.body.setAttribute('dir', l === 'ar' ? 'rtl' : 'ltr');
+                this.translateUI(l); this.saveSettings();
+            },
+
+            // ОГРОМНЫЙ СЛОВАРЬ (БЕЗ ЗАГЛУШЕК)
+            getDict() {
+                return {
+                    ru: { select_pdf: "Выбрать PDF", file_not_selected: "Файл не выбран", start: "Начать", config_title: "Настройки конвертации", quality_lbl: "Качество", format_lbl: "Формат", name_lbl: "Название файла", filename_ph: "введите название", suggest_q: "Предложить свой %", suggest_f: "Предложить формат", convert_btn: "Конвертировать", success_title: "Успешно!", save_btn: "Сохранить", share_photos: "Поделиться фото", open_in: "Открыть в...", set_as: "Установить как...", print_photos: "Распечатать", share_vk: "Поделиться фото в VK", share_app: "Поделиться приложением", feedback_btn: "Оставить отзыв", github_btn: "Звёздочка на GitHub", google_form_btn: "Отзыв в Google", done_btn: "Готово", settings_title: "Настройки", theme_lbl: "Тема", theme_light: "Светлая", theme_dark: "Тёмная", theme_custom: "Своя", lang_lbl: "Язык", format_def_lbl: "Формат по умолчанию", quality_def_lbl: "Качество по умолчанию", left_hand_lbl: "Режим левши", save_exit_btn: "Сохранить и выйти", tool_brush: "Кисть", tool_text: "Текст", tool_clear: "Очистить", tool_bright: "Яркость:", tool_contrast: "Контраст:", brush_size: "Размер кисти:", original_opt: "Оригинал", custom_opt: "Свой вариант", other_opt: "Другой", enter_text: "Введите текст", cancel_btn: "Отмена", ok_btn: "ОК", copy_btn: "Копировать", close_btn: "Закрыть", text_hint: "Нажмите на любую точку фото для добавления текста", vk_not_installed: "VK не установлен", set_as_hint: "Для установки обоев сохраните фото и выберите опцию в галерее." },
+                    en: { select_pdf: "Select PDF", file_not_selected: "No file selected", start: "Start", config_title: "Conversion Settings", quality_lbl: "Quality", format_lbl: "Format", name_lbl: "File Name", filename_ph: "enter name", suggest_q: "Suggest quality %", suggest_f: "Suggest format", convert_btn: "Convert", success_title: "Success!", save_btn: "Save", share_photos: "Share photos", open_in: "Open in...", set_as: "Set as...", print_photos: "Print", share_vk: "Share to VK", share_app: "Share App", feedback_btn: "Leave Feedback", github_btn: "Star on GitHub", google_form_btn: "Google Form", done_btn: "Done", settings_title: "Settings", theme_lbl: "Theme", theme_light: "Light", theme_dark: "Dark", theme_custom: "Custom", lang_lbl: "Language", format_def_lbl: "Default Format", quality_def_lbl: "Default Quality", left_hand_lbl: "Left-handed mode", save_exit_btn: "Save & Exit", tool_brush: "Brush", tool_text: "Text", tool_clear: "Clear", tool_bright: "Brightness:", tool_contrast: "Contrast:", brush_size: "Brush size:", original_opt: "Original", custom_opt: "Custom", other_opt: "Other", enter_text: "Enter text", cancel_btn: "Cancel", ok_btn: "OK", copy_btn: "Copy", close_btn: "Close", text_hint: "Tap anywhere on the photo to add text", vk_not_installed: "VK is not installed", set_as_hint: "To set as wallpaper, save the photo and select the option in your gallery." },
+                    cn: { select_pdf: "选择 PDF", file_not_selected: "未选择文件", start: "开始", config_title: "转换设置", quality_lbl: "质量", format_lbl: "格式", name_lbl: "文件名", filename_ph: "输入名称", suggest_q: "建议质量 %", suggest_f: "建议格式", convert_btn: "转换", success_title: "成功！", save_btn: "保存", share_photos: "分享照片", open_in: "在...中打开", set_as: "设置为...", print_photos: "打印", share_vk: "分享到 VK", share_app: "分享应用", feedback_btn: "留言反馈", github_btn: "GitHub 上的星", google_form_btn: "Google 表单", done_btn: "完成", settings_title: "设置", theme_lbl: "主题", theme_light: "光", theme_dark: "暗", theme_custom: "自定义", lang_lbl: "语言", format_def_lbl: "默认格式", quality_def_lbl: "默认质量", left_hand_lbl: "左手模式", save_exit_btn: "保存并退出", tool_brush: "刷子", tool_text: "文本", tool_clear: "清除", tool_bright: "亮度:", tool_contrast: "对比度:", brush_size: "画笔大小:", original_opt: "原来的", custom_opt: "自定义选项", other_opt: "其他", enter_text: "输入文本", cancel_btn: "取消", ok_btn: "确定", copy_btn: "复制", close_btn: "关闭", text_hint: "点击照片上的任意位置添加文本", vk_not_installed: "未安装 VK", set_as_hint: "要设置为壁纸，请保存照片并在图库中选择该选项。" },
+                    ar: { select_pdf: "حدد PDF", file_not_selected: "لم يتم تحديد ملف", start: "يبدأ", config_title: "إعدادات التحويل", quality_lbl: "جودة", format_lbl: "صيغة", name_lbl: "اسم الملف", filename_ph: "أدخل الاسم", suggest_q: "اقتراح الجودة ٪", suggest_f: "اقتراح صيغة", convert_btn: "يتحول", success_title: "النجاح!", save_btn: "يحفظ", share_photos: "مشاركة الصور", open_in: "فتح في...", set_as: "تعيين كـ...", print_photos: "مطبعة", share_vk: "مشاركة إلى VK", share_app: "مشاركة التطبيق", feedback_btn: "ترك تعليق", github_btn: "نجمة على جيثب", google_form_btn: "نموذج جوجل", done_btn: "منتهي", settings_title: "إعدادات", theme_lbl: "سمة", theme_light: "ضوء", theme_dark: "داكن", theme_custom: "مخصص", lang_lbl: "لغة", format_def_lbl: "التنسيق الافتراضي", quality_def_lbl: "الجودة الافتراضية", left_hand_lbl: "وضع اليد اليسرى", save_exit_btn: "حفظ وخروج", tool_brush: "فرشاة", tool_text: "نص", tool_clear: "واضح", tool_bright: "سطوع:", tool_contrast: "تَباين:", brush_size: "حجم الفرشاة:", original_opt: "أصلي", custom_opt: "مخصص", other_opt: "آخر", enter_text: "أدخل نصا", cancel_btn: "إلغاء", ok_btn: "حسنا", copy_btn: "ينسخ", close_btn: "يغلق", text_hint: "اضغط في أي مكان على الصورة لإضافة نص", vk_not_installed: "VK غير مثبت", set_as_hint: "لتعيين كخلفية ، احفظ الصورة وحدد الخيار في المعرض." },
+                    by: { select_pdf: "Выбраць PDF", file_not_selected: "Файл не выбраны", start: "Пачаць", config_title: "Налады канвертацыі", quality_lbl: "Якасць", format_lbl: "Фармат", name_lbl: "Назва файла", filename_ph: "увядзіце назву", suggest_q: "Прапанаваць сваю %", suggest_f: "Прапанаваць фармат", convert_btn: "Канвертаваць", success_title: "Паспяхова!", save_btn: "Захаваць", share_photos: "Падзяліцца фота", open_in: "Адкрыць у...", set_as: "Усталяваць як...", print_photos: "Раздрукаваць", share_vk: "Падзяліцца ў VK", share_app: "Падзяліцца дадаткам", feedback_btn: "Пакінуць водгук", github_btn: "Зорачка на GitHub", google_form_btn: "Водгук у Google", done_btn: "Гатова", settings_title: "Налады", theme_lbl: "Тэма", theme_light: "Светлая", theme_dark: "Цёмная", theme_custom: "Свая", lang_lbl: "Мова", format_def_lbl: "Фармат па змаўчанні", quality_def_lbl: "Якасць па змаўчанні", left_hand_lbl: "Рэжым ляўшы", save_exit_btn: "Захаваць і выйсці", tool_brush: "Пэндзаль", tool_text: "Тэкст", tool_clear: "Ачысціць", tool_bright: "Яркасць:", tool_contrast: "Кантраст:", brush_size: "Памер пэндзля:", original_opt: "Арыгінал", custom_opt: "Свой варыянт", other_opt: "Іншы", enter_text: "Увядзіце тэкст", cancel_btn: "Адмена", ok_btn: "ОК", copy_btn: "Капіяваць", close_btn: "Зачыніць", text_hint: "Націсніце на любую кропку фота для дадання тэксту", vk_not_installed: "VK не ўсталяваны", set_as_hint: "Для ўстаноўкі шпалер захавайце фота і выберыце опцыю ў галерэі." },
+                    de: { select_pdf: "PDF wählen", file_not_selected: "Keine Datei", start: "Start", config_title: "Konvertierungseinstellungen", quality_lbl: "Qualität", format_lbl: "Format", name_lbl: "Dateiname", filename_ph: "Namen eingeben", suggest_q: "Qualität vorschlagen", suggest_f: "Format vorschlagen", convert_btn: "Konvertieren", success_title: "Erfolg!", save_btn: "Speichern", share_photos: "Fotos teilen", open_in: "Öffnen in...", set_as: "Einstellen als...", print_photos: "Drucken", share_vk: "Teilen auf VK", share_app: "App teilen", feedback_btn: "Feedback geben", github_btn: "Stern auf GitHub", google_form_btn: "Google-Formular", done_btn: "Fertig", settings_title: "Einstellungen", theme_lbl: "Thema", theme_light: "Hell", theme_dark: "Dunkel", theme_custom: "Benutzerdefiniert", lang_lbl: "Sprache", format_def_lbl: "Standardformat", quality_def_lbl: "Standardqualität", left_hand_lbl: "Linkshänder", save_exit_btn: "Speichern & Beenden", tool_brush: "Pinsel", tool_text: "Text", tool_clear: "Klar", tool_bright: "Helligkeit:", tool_contrast: "Kontrast:", brush_size: "Pinselgröße:", original_opt: "Original", custom_opt: "Brauch", other_opt: "Andere", enter_text: "Text eingeben", cancel_btn: "Stornieren", ok_btn: "OK", copy_btn: "Kopieren", close_btn: "Schließen", text_hint: "Tippen Sie auf eine beliebige Stelle, um Text hinzuzufügen", vk_not_installed: "VK ist nicht installiert", set_as_hint: "Um als Hintergrundbild festzulegen, speichern Sie das Foto und wählen Sie die Option in der Galerie." },
+                    ua: { select_pdf: "Вибрати PDF", file_not_selected: "Файл не вибрано", start: "Почати", config_title: "Налаштування конвертації", quality_lbl: "Якість", format_lbl: "Формат", name_lbl: "Назва файлу", filename_ph: "введіть назву", suggest_q: "Запропонувати свою %", suggest_f: "Запропонувати формат", convert_btn: "Конвертувати", success_title: "Успішно!", save_btn: "Зберегти", share_photos: "Поділитися фото", open_in: "Відкрити в...", set_as: "Встановити як...", print_photos: "Роздрукувати", share_vk: "Поділитися у VK", share_app: "Поділитися додатком", feedback_btn: "Залишити відгук", github_btn: "Зірочка на GitHub", google_form_btn: "Відгук у Google", done_btn: "Готово", settings_title: "Налаштування", theme_lbl: "Тема", theme_light: "Світла", theme_dark: "Темна", theme_custom: "Своя", lang_lbl: "Мова", format_def_lbl: "Формат за замовчуванням", quality_def_lbl: "Якість за замовчуванням", left_hand_lbl: "Режим шульги", save_exit_btn: "Зберегти та вийти", tool_brush: "Пензель", tool_text: "Текст", tool_clear: "Очистити", tool_bright: "Яскравість:", tool_contrast: "Контраст:", brush_size: "Розмір пензля:", original_opt: "Оригінал", custom_opt: "Свій варіант", other_opt: "Інший", enter_text: "Введіть текст", cancel_btn: "Скасувати", ok_btn: "ОК", copy_btn: "Копіювати", close_btn: "Закрити", text_hint: "Натисніть на будь-яку точку фото для додавання тексту", vk_not_installed: "VK не встановлено", set_as_hint: "Для встановлення шпалер збережіть фото і виберіть опцію в галереї." },
+                    mk: { select_pdf: "Избери PDF", file_not_selected: "Нема датотека", start: "Почеток", config_title: "Поставки за конверзија", quality_lbl: "Квалитет", format_lbl: "Формат", name_lbl: "Име на датотека", filename_ph: "внесете име", suggest_q: "Предложете квалитет", suggest_f: "Предложи формат", convert_btn: "Претвори", success_title: "Успех!", save_btn: "Зачувај", share_photos: "Споделете фотографии", open_in: "Отвори во...", set_as: "Постави како...", print_photos: "Печати", share_vk: "Сподели на VK", share_app: "Сподели апликација", feedback_btn: "Оставете повратни информации", github_btn: "Ѕвезда на GitHub", google_form_btn: "Формулар на Google", done_btn: "Готово", settings_title: "Поставки", theme_lbl: "Тема", theme_light: "Светлина", theme_dark: "Темен", theme_custom: "Прилагодено", lang_lbl: "Јазик", format_def_lbl: "Стандарден формат", quality_def_lbl: "Стандарден квалитет", left_hand_lbl: "Леворак режим", save_exit_btn: "Зачувај и излези", tool_brush: "Четка", tool_text: "Текст", tool_clear: "Јасно", tool_bright: "Осветленост:", tool_contrast: "Контраст:", brush_size: "Големина на четка:", original_opt: "Оригинален", custom_opt: "Прилагодено", other_opt: "Друго", enter_text: "Внесете текст", cancel_btn: "Откажи", ok_btn: "Во ред", copy_btn: "Копирај", close_btn: "Затвори", text_hint: "Допрете каде било на фотографијата за да додадете текст", vk_not_installed: "VK не е инсталиран", set_as_hint: "За да поставите како позадина, зачувајте ја фотографијата и изберете ја опцијата во галеријата." }
+                };
+            },
+
+            translateUI(lang) {
+                const t = this.getDict()[lang] || this.getDict()['en'];
+                document.querySelectorAll('[data-i18n]').forEach(el => { if(t[el.getAttribute('data-i18n')]) el.innerText = t[el.getAttribute('data-i18n')]; });
+                document.querySelectorAll('[data-i18n-ph]').forEach(el => { if(t[el.getAttribute('data-i18n-ph')]) el.placeholder = t[el.getAttribute('data-i18n-ph')]; });
+                document.querySelectorAll('[data-i18n-opt]').forEach(el => { if(t[el.getAttribute('data-i18n-opt')]) el.innerText = t[el.getAttribute('data-i18n-opt')]; });
+                if(!this.currentFile) document.getElementById('pdf-name-display').textContent = t.file_not_selected;
+            }
+        };
+
+        window.onload = () => app.init();
+    </script>
+</body>
+</html>
